@@ -3,7 +3,7 @@ from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
 from pathlib import Path
 from filters import apply_filter
-
+import cv2
 
 # Shared filter names used by the UI and the webcam
 FILTERS = [
