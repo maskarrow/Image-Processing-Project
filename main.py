@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from PIL import Image, ImageTk  # pip install pillow
+from PIL import Image, ImageTk
 from pathlib import Path
 from filters import apply_filter
 
@@ -11,15 +11,15 @@ class ImageFilterUI(tk.Tk):
         self.geometry("1100x650")
         self.minsize(900, 550)
 
-        self.images = []          # list[Path]
-        self.current_index = None # int | None
+        self.images = []
+        self.current_index = None
         self._preview_photo = None
         self._original_pil_image = None
         self._current_pil_image = None
         self._build_layout()
 
     def _build_layout(self):
-        # ----- top toolbar -----
+        
         toolbar = ttk.Frame(self, padding=(10, 8))
         toolbar.pack(side="top", fill="x")
 
@@ -33,7 +33,7 @@ class ImageFilterUI(tk.Tk):
         self.status_var = tk.StringVar(value="Ready.")
         ttk.Label(toolbar, textvariable=self.status_var).pack(side="right")
 
-        # ----- main area (left list, center preview, right filters) -----
+        
         main = ttk.Frame(self, padding=10)
         main.pack(side="top", fill="both", expand=True)
 
@@ -42,7 +42,7 @@ class ImageFilterUI(tk.Tk):
         main.columnconfigure(2, weight=0)  # filters
         main.rowconfigure(0, weight=1)
 
-        # left: image list
+        
         left = ttk.LabelFrame(main, text="Images", padding=8)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
 
@@ -55,7 +55,7 @@ class ImageFilterUI(tk.Tk):
 
         self.listbox.bind("<<ListboxSelect>>", self.on_select_image)
 
-        # center: preview
+        
         center = ttk.LabelFrame(main, text="Preview", padding=8)
         center.grid(row=0, column=1, sticky="nsew", padx=(0, 10))
         center.rowconfigure(0, weight=1)
@@ -76,11 +76,11 @@ class ImageFilterUI(tk.Tk):
         ttk.Button(nav, text="◀ Prev", command=self.on_prev).pack(side="left")
         ttk.Button(nav, text="Next ▶", command=self.on_next).pack(side="left", padx=(6, 0))
 
-        # right: filters panel
+        
         right = ttk.LabelFrame(main, text="Filters", padding=8)
         right.grid(row=0, column=2, sticky="nsew")
 
-        # optional: categories
+        
         ttk.Label(right, text="Basic").pack(anchor="w", pady=(0, 4))
         btn_grid = ttk.Frame(right)
         btn_grid.pack(fill="x")
@@ -98,14 +98,12 @@ class ImageFilterUI(tk.Tk):
             b.grid(row=i, column=0, sticky="ew", pady=3)
         btn_grid.columnconfigure(0, weight=1)
 
-        # Strength control for filters (0.0 .. 1.0) — prettier UI using ttk.Scale
         self.strength = tk.DoubleVar(value=0.5)
         ttk.Label(right, text="Strength").pack(anchor="w", pady=(8, 2))
 
         strength_frame = ttk.Frame(right)
         strength_frame.pack(fill="x")
 
-        # Use ttk.Scale for a modern look; range 0.0..1.0 and update `self.strength`
         self._strength_scale = ttk.Scale(
             strength_frame, from_=0.0, to=1.0, orient="horizontal",
             command=self._on_strength_change, length=200
@@ -113,7 +111,6 @@ class ImageFilterUI(tk.Tk):
         self._strength_scale.set(self.strength.get())
         self._strength_scale.pack(side="left", fill="x", expand=True)
 
-        # Percent label to the right of the slider
         self._strength_value_label = ttk.Label(strength_frame, text=f"{int(self.strength.get()*100)}%")
         self._strength_value_label.pack(side="left", padx=(8, 0))
 
@@ -175,7 +172,6 @@ class ImageFilterUI(tk.Tk):
             messagebox.showwarning("Export", "Select an image first.")
             return
 
-        # Suggest a default filename based on the original name
         src_path = self.images[self.current_index]
         default_name = f"{src_path.stem}_filtered"
 
@@ -193,7 +189,6 @@ class ImageFilterUI(tk.Tk):
             if img is None:
                 raise RuntimeError("No image data available to export.")
 
-            # Save using PIL; format inferred from file extension
             img.save(target)
             self.status_var.set(f"Exported: {Path(target).name}")
             messagebox.showinfo("Export", f"Saved to: {target}")
@@ -226,12 +221,10 @@ class ImageFilterUI(tk.Tk):
         self._select_index((self.current_index + 1) % len(self.images))
 
     def _on_strength_change(self, value):
-        # Called with the scale value (string), update DoubleVar and percent label
         try:
             v = float(value)
         except Exception:
             return
-        # keep internal 0.0..1.0 value
         self.strength.set(v)
         if hasattr(self, '_strength_value_label'):
             self._strength_value_label.config(text=f"{int(round(v*100))}%")
@@ -241,7 +234,6 @@ class ImageFilterUI(tk.Tk):
             messagebox.showwarning("No image", "Select an image first.")
             return
 
-        # Reset should restore original
         if name == "Reset":
             self._current_pil_image = self._original_pil_image.copy()
             out = self._current_pil_image.copy()
@@ -254,7 +246,6 @@ class ImageFilterUI(tk.Tk):
         result = apply_filter(self._current_pil_image, name, self.strength.get())
         self._current_pil_image = result.image
 
-        # Show preview (resized copy)
         out = self._current_pil_image.copy()
         out.thumbnail((650, 480))
         self._preview_photo = ImageTk.PhotoImage(out)
@@ -265,12 +256,10 @@ class ImageFilterUI(tk.Tk):
 
     def _show_preview(self, path: Path):
         try:
-            # Load as PIL (keep full-res internally)
             img = Image.open(path).convert("RGB")
             self._original_pil_image = img
             self._current_pil_image = img.copy()
 
-            # Create a resized copy only for display
             preview = self._current_pil_image.copy()
             preview.thumbnail((650, 480))
 
