@@ -4,6 +4,15 @@ from PIL import Image, ImageTk
 from pathlib import Path
 from filters import apply_filter
 
+
+# Shared filter names used by the UI and the webcam
+FILTERS = [
+    "Grayscale", "Blur", "Sharpen", "Edge Detect",
+    "Emboss", "Sepia", "Invert", "Threshold",
+    "Brightness +", "Brightness -", "Contrast +", "Contrast -",
+    "Reset"
+]
+
 class ImageFilterUI(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -29,6 +38,7 @@ class ImageFilterUI(tk.Tk):
         ttk.Button(toolbar, text="Clear All", command=self.on_clear_all).pack(side="left")
         ttk.Separator(toolbar, orient="vertical").pack(side="left", fill="y", padx=8)
         ttk.Button(toolbar, text="Export", command=self.on_export).pack(side="left")
+        ttk.Button(toolbar, text="Webcam", command=self.on_webcam).pack(side="left", padx=8)
 
         self.status_var = tk.StringVar(value="Ready.")
         ttk.Label(toolbar, textvariable=self.status_var).pack(side="right")
@@ -86,14 +96,7 @@ class ImageFilterUI(tk.Tk):
         btn_grid.pack(fill="x")
 
         # You can rename/add any filters you want
-        filters = [
-            "Grayscale", "Blur", "Sharpen", "Edge Detect",
-            "Emboss", "Sepia", "Invert", "Threshold",
-            "Brightness +", "Brightness -", "Contrast +", "Contrast -",
-            "Reset"
-        ]
-
-        for i, name in enumerate(filters):
+        for i, name in enumerate(FILTERS):
             b = ttk.Button(btn_grid, text=name, command=lambda n=name: self.on_filter_clicked(n))
             b.grid(row=i, column=0, sticky="ew", pady=3)
         btn_grid.columnconfigure(0, weight=1)
@@ -201,6 +204,12 @@ class ImageFilterUI(tk.Tk):
             return
         self._select_index(sel[0])
 
+    def on_webcam(self):
+        if hasattr(self, '_webcam_win') and self._webcam_win.winfo_exists():
+            self._webcam_win.lift()
+            return
+        self._webcam_win = WebcamWindow(self, FILTERS, self.strength)
+
     def _select_index(self, idx: int):
         if idx < 0 or idx >= len(self.images):
             return
@@ -269,6 +278,158 @@ class ImageFilterUI(tk.Tk):
             self.status_var.set(f"Selected: {path.name}")
         except Exception as e:
             messagebox.showerror("Preview error", str(e))
+
+
+class WebcamWindow(tk.Toplevel):
+    def __init__(self, parent: ImageFilterUI, filter_names, shared_strength_var: tk.DoubleVar | None = None):
+        super().__init__(parent)
+        self.title("Webcam")
+        self.geometry("720x560")
+        self.resizable(False, False)
+
+        self.parent = parent
+        self.filter_names = list(filter_names)
+        self.shared_strength_var = shared_strength_var
+
+        self._running = False
+        self._cap = None
+        self._last_frame_pil = None
+
+        top = ttk.Frame(self, padding=8)
+        top.pack(fill="both", expand=True)
+
+        self.video_label = ttk.Label(top, text="Webcam not started", anchor="center")
+        self.video_label.pack(fill="both", expand=True)
+
+        ctrl = ttk.Frame(top)
+        ctrl.pack(fill="x", pady=(6, 0))
+
+        ttk.Label(ctrl, text="Filter:").pack(side="left")
+        self.filter_var = tk.StringVar(value=self.filter_names[0])
+        self.filter_combo = ttk.Combobox(ctrl, values=self.filter_names, textvariable=self.filter_var, state="readonly", width=18)
+        self.filter_combo.pack(side="left", padx=(6, 12))
+
+        ttk.Label(ctrl, text="Strength:").pack(side="left")
+        self.local_strength = tk.DoubleVar(value=shared_strength_var.get() if shared_strength_var else 0.5)
+        self.str_scale = ttk.Scale(ctrl, from_=0.0, to=1.0, orient="horizontal", command=self._on_strength_change, length=140)
+        self.str_scale.set(self.local_strength.get())
+        self.str_scale.pack(side="left", padx=(6, 8))
+
+        self._str_label = ttk.Label(ctrl, text=f"{int(self.local_strength.get()*100)}%")
+        self._str_label.pack(side="left")
+
+        btn_frame = ttk.Frame(top)
+        btn_frame.pack(fill="x", pady=(8, 0))
+
+        self.start_btn = ttk.Button(btn_frame, text="Start", command=self.toggle)
+        self.start_btn.pack(side="left")
+
+        ttk.Button(btn_frame, text="Snapshot", command=self.snapshot).pack(side="left", padx=8)
+        ttk.Button(btn_frame, text="Close", command=self.close).pack(side="right")
+
+        self.protocol("WM_DELETE_WINDOW", self.close)
+
+    def _on_strength_change(self, value):
+        try:
+            v = float(value)
+        except Exception:
+            return
+        self.local_strength.set(v)
+        self._str_label.config(text=f"{int(round(v*100))}%")
+        if self.shared_strength_var is not None:
+            self.shared_strength_var.set(v)
+
+    def toggle(self):
+        if self._running:
+            self._stop()
+        else:
+            self._start()
+
+    def _start(self):
+        try:
+            import cv2
+        except Exception as e:
+            messagebox.showerror("Webcam error", f"OpenCV not available: {e}\nInstall with: pip install opencv-python")
+            return
+
+        try:
+            self._cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        except Exception:
+            self._cap = cv2.VideoCapture(0)
+
+        if not self._cap or not self._cap.isOpened():
+            messagebox.showerror("Webcam error", "Unable to open the webcam.")
+            return
+
+        self._running = True
+        self.start_btn.config(text="Stop")
+        self._update_frame()
+
+    def _stop(self):
+        self._running = False
+        self.start_btn.config(text="Start")
+        if self._cap:
+            try:
+                self._cap.release()
+            except Exception:
+                pass
+            self._cap = None
+
+    def _update_frame(self):
+        if not self._running or not self._cap:
+            return
+        try:
+            ret, frame = self._cap.read()
+            if not ret:
+                self.after(30, self._update_frame)
+                return
+
+            import cv2
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            from PIL import Image
+            img = Image.fromarray(frame)
+
+            w, h = img.size
+            max_w, max_h = 640, 480
+            if w > max_w or h > max_h:
+                img = img.copy()
+                img.thumbnail((max_w, max_h))
+
+            fname = self.filter_var.get()
+            strength = self.local_strength.get()
+            if fname and fname != "Reset":
+                try:
+                    res = apply_filter(img.convert("RGB"), fname, strength)
+                    img = res.image
+                except Exception:
+                    pass
+
+            self._last_frame_pil = img
+            imgtk = ImageTk.PhotoImage(img)
+            self.video_label.config(image=imgtk, text="")
+            self.video_label.image = imgtk
+        finally:
+            self.after(30, self._update_frame)
+
+    def snapshot(self):
+        if self._last_frame_pil is None:
+            messagebox.showwarning("Snapshot", "No frame available.")
+            return
+        target = filedialog.asksaveasfilename(title="Save snapshot", defaultextension=".png", filetypes=[("PNG","*.png"),("JPEG","*.jpg;*.jpeg"),("All files","*.*")])
+        if not target:
+            return
+        try:
+            self._last_frame_pil.save(target)
+            messagebox.showinfo("Snapshot", f"Saved: {target}")
+        except Exception as e:
+            messagebox.showerror("Snapshot error", str(e))
+
+    def close(self):
+        self._stop()
+        try:
+            self.destroy()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
